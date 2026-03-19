@@ -2,12 +2,13 @@
  * simulator_structure.c
  *
  * Simulateur EOMM (prototype) - pool 300 joueurs, parties uniquement 5v5.
- * HiddenMMR factor basé sur rôle/champion + signaux comportementaux
- * dont le nombre de pings/emotes non textuels in-game (?, !, etc.).
+ * HiddenMMR factor basé sur rôle/champion + signaux comportementaux:
+ * - pings/emotes non textuels in-game (?, !, etc.)
+ * - utilisation du chat écrit (nb messages) au-dessus de la moyenne du joueur
+ * - deaths
+ * - click rate
  *
  * Notes:
- * - "hiddenMMR" ici est conservé dans Player mais le placement utilise
- *   effectiveMMR = visibleMMR * hiddenFactor.
  * - Historique: on garde 50 matchs, et on calcule les moyennes sur les 10 derniers (ou moins si <10).
  */
 
@@ -26,24 +27,20 @@
 #define TEAM_SIZE 5
 #define MATCH_SIZE (TEAM_SIZE * 2)
 
-/* nombre max d'entrées d'historique stockées */
 #define HISTORY_MAX 50
-
-/* fenêtre de calcul des moyennes */
 #define WINDOW_RECENT 10
 
 /* penalités hidden factor */
 #define PENALTY_ROLE_NOT_TOP2          0.10f
 #define PENALTY_CHAMP_NOT_TOP3         0.20f
 #define PENALTY_INGAME_PINGS_ABOVE_AVG 0.05f
+#define PENALTY_CHAT_ABOVE_AVG         0.05f
 #define PENALTY_DEATH_ABOVE_AVG        0.05f
 #define PENALTY_CLICK_ABOVE_AVG        0.05f
 #define PENALTY_CLICK_BELOW_HALF       0.10f
 
-/* clamp */
 #define HIDDEN_FACTOR_MIN 0.50f
 
-/* reset */
 #define FULL_RESET_SECONDS (7 * 24 * 3600)
 #define SOFT_RESET_PERIOD_GAMES 8
 #define SOFT_RESET_HIDDEN_W 0.95f
@@ -53,26 +50,27 @@
  * Structures
  * ========================= */
 typedef struct {
-    char name[16];            // Player001, Player002 ...
-    float visibleMMR;         // MMR affiché
-    float hiddenMMR;          // MMR caché
-    float neutralMMR;         // MMR neutre pour reset complet
-    time_t lastMatchTime;     // timestamp du dernier match (pour reset IRL)
+    char name[16];
+    float visibleMMR;
+    float hiddenMMR;
+    float neutralMMR;
+    time_t lastMatchTime;
 
-    int wins;                 // total victoires
-    int losses;               // total défaites
-    int totalGames;           // parties jouées
+    int wins;
+    int losses;
+    int totalGames;
 
-    int currentRole;          // rôle pour la partie
-    int topRoles[2];          // top 2 rôles dynamiques
+    int currentRole;
+    int topRoles[2];
 
-    char currentChampion[16];     // champion choisi pour la partie
-    char topChampions[3][16];     // top 3 champions dynamiques
+    char currentChampion[16];
+    char topChampions[3][16];
 
-    int ingamePingCountHistory[HISTORY_MAX]; // nb de pings/emotes non textuels in-game (?, !, etc.)
-    int deathHistory[HISTORY_MAX];           // historique nombre de morts
-    int clickRateHistory[HISTORY_MAX];       // historique click rate
-    int historyCount;                        // nb d'entrées valides (<= HISTORY_MAX)
+    int ingamePingCountHistory[HISTORY_MAX]; // pings/emotes non textuels
+    int chatUsageHistory[HISTORY_MAX];       // nb messages chat écrit (ou unités)
+    int deathHistory[HISTORY_MAX];
+    int clickRateHistory[HISTORY_MAX];
+    int historyCount;
 } Player;
 
 typedef struct {
@@ -86,12 +84,6 @@ typedef struct {
 /* =========================
  * Utilitaires
  * ========================= */
-static float clampf(float v, float lo, float hi) {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
-    return v;
-}
-
 static int min_int(int a, int b) { return (a < b) ? a : b; }
 
 static void shufflePlayers(Player *players, int n) {
@@ -103,7 +95,6 @@ static void shufflePlayers(Player *players, int n) {
     }
 }
 
-/* Retourne la taille de fenêtre réelle (<=WINDOW_RECENT) et un start index sûr */
 static void recent_window(const Player *p, int *start, int *count) {
     int n = p->historyCount;
     if (n <= 0) {
@@ -125,24 +116,18 @@ static float calculateHiddenFactor(Player *p) {
     /* Rôle: top 2 */
     int roleOK = 0;
     for (int i = 0; i < 2; i++) {
-        if (p->currentRole == p->topRoles[i]) {
-            roleOK = 1;
-            break;
-        }
+        if (p->currentRole == p->topRoles[i]) { roleOK = 1; break; }
     }
     if (!roleOK) factor -= PENALTY_ROLE_NOT_TOP2;
 
     /* Champion: top 3 */
     int champOK = 0;
     for (int i = 0; i < 3; i++) {
-        if (strcmp(p->currentChampion, p->topChampions[i]) == 0) {
-            champOK = 1;
-            break;
-        }
+        if (strcmp(p->currentChampion, p->topChampions[i]) == 0) { champOK = 1; break; }
     }
     if (!champOK) factor -= PENALTY_CHAMP_NOT_TOP3;
 
-    /* In-game pings/emotes / Death / Click: comparaison au AVG des X derniers */
+    /* Comparaison au AVG des X derniers */
     int start, count;
     recent_window(p, &start, &count);
     if (count > 0) {
@@ -154,6 +139,14 @@ static float calculateHiddenFactor(Player *p) {
             for (int i = start; i < start + count; i++) sum += p->ingamePingCountHistory[i];
             float avg = (float)sum / (float)count;
             if ((float)p->ingamePingCountHistory[last] > avg) factor -= PENALTY_INGAME_PINGS_ABOVE_AVG;
+        }
+
+        /* Chat écrit */
+        {
+            int sum = 0;
+            for (int i = start; i < start + count; i++) sum += p->chatUsageHistory[i];
+            float avg = (float)sum / (float)count;
+            if ((float)p->chatUsageHistory[last] > avg) factor -= PENALTY_CHAT_ABOVE_AVG;
         }
 
         /* Death */
@@ -189,10 +182,7 @@ static float effectiveMMR(Player *p) {
  * ========================= */
 static void resetHiddenMMR(Player *p) {
     time_t now = time(NULL);
-    if (p->lastMatchTime == 0) {
-        p->lastMatchTime = now;
-        return;
-    }
+    if (p->lastMatchTime == 0) { p->lastMatchTime = now; return; }
     if (difftime(now, p->lastMatchTime) >= (double)FULL_RESET_SECONDS) {
         p->hiddenMMR = p->neutralMMR;
         p->lastMatchTime = now;
@@ -206,33 +196,33 @@ static void softResetHiddenMMR(Player *p) {
 }
 
 /* =========================
- * Historique (push simple)
+ * Historique
  * ========================= */
-static void pushHistory(Player *p, int ingamePingCount, int deaths, int clickRate) {
+static void pushHistory(Player *p, int ingamePingCount, int chatUsage, int deaths, int clickRate) {
     if (p->historyCount < HISTORY_MAX) {
         int idx = p->historyCount;
         p->ingamePingCountHistory[idx] = ingamePingCount;
+        p->chatUsageHistory[idx] = chatUsage;
         p->deathHistory[idx] = deaths;
         p->clickRateHistory[idx] = clickRate;
         p->historyCount++;
     } else {
-        /* décale tout à gauche (O(n)), suffisant pour prototype */
         for (int i = 1; i < HISTORY_MAX; i++) {
             p->ingamePingCountHistory[i - 1] = p->ingamePingCountHistory[i];
+            p->chatUsageHistory[i - 1] = p->chatUsageHistory[i];
             p->deathHistory[i - 1] = p->deathHistory[i];
             p->clickRateHistory[i - 1] = p->clickRateHistory[i];
         }
         p->ingamePingCountHistory[HISTORY_MAX - 1] = ingamePingCount;
+        p->chatUsageHistory[HISTORY_MAX - 1] = chatUsage;
         p->deathHistory[HISTORY_MAX - 1] = deaths;
         p->clickRateHistory[HISTORY_MAX - 1] = clickRate;
     }
 }
 
 /* =========================
- * Team placement (5v5 only)
+ * Team placement
  * ========================= */
-
-/* Placement initial: shuffle puis blocs de 10 */
 static void placeInitialTeams(Player *players, int nPlayers, Match *matches, int *numMatches) {
     shufflePlayers(players, nPlayers);
 
@@ -252,11 +242,6 @@ static void placeInitialTeams(Player *players, int nPlayers, Match *matches, int
     }
 }
 
-/*
- * Placement avancé:
- * - on trie les joueurs par effectiveMMR décroissant
- * - snake draft: A B B A A B B A ...
- */
 static int cmp_effective_desc(const void *a, const void *b) {
     Player *pa = *(Player**)a;
     Player *pb = *(Player**)b;
@@ -273,7 +258,6 @@ static void createMatchAdvanced(Player *players, int nPlayers, Match *matches, i
 
     Player **sorted = (Player**)malloc(sizeof(Player*) * nPlayers);
     for (int i = 0; i < nPlayers; i++) sorted[i] = &players[i];
-
     qsort(sorted, nPlayers, sizeof(Player*), cmp_effective_desc);
 
     for (int m = 0; m < nm; m++) {
@@ -281,19 +265,15 @@ static void createMatchAdvanced(Player *players, int nPlayers, Match *matches, i
         matches[m].sumEffectiveB = 0.0f;
         matches[m].winner = -1;
 
-        for (int i = 0; i < TEAM_SIZE; i++) {
-            matches[m].teamA[i] = NULL;
-            matches[m].teamB[i] = NULL;
-        }
+        for (int i = 0; i < TEAM_SIZE; i++) { matches[m].teamA[i] = NULL; matches[m].teamB[i] = NULL; }
 
         int aCount = 0, bCount = 0;
         int base = m * MATCH_SIZE;
+
         for (int k = 0; k < MATCH_SIZE; k++) {
             Player *p = sorted[base + k];
-            int pickToA;
-
             int mod = k % 4;
-            pickToA = (mod == 0 || mod == 3);
+            int pickToA = (mod == 0 || mod == 3);
 
             if (pickToA) {
                 if (aCount < TEAM_SIZE) matches[m].teamA[aCount++] = p;
@@ -309,9 +289,9 @@ static void createMatchAdvanced(Player *players, int nPlayers, Match *matches, i
 }
 
 /* =========================
- * Simulation de game
+ * Simulation
  * ========================= */
-static int rand_range(int lo, int hi) { /* inclusive */
+static int rand_range(int lo, int hi) {
     if (hi <= lo) return lo;
     return lo + (rand() % (hi - lo + 1));
 }
@@ -331,7 +311,6 @@ static void simulateGame(Match *matches, int numMatches) {
 
     for (int m = 0; m < numMatches; m++) {
         float sumA = 0.0f, sumB = 0.0f;
-
         for (int i = 0; i < TEAM_SIZE; i++) {
             sumA += effectiveMMR(matches[m].teamA[i]);
             sumB += effectiveMMR(matches[m].teamB[i]);
@@ -342,7 +321,6 @@ static void simulateGame(Match *matches, int numMatches) {
 
         float avgA = sumA / (float)TEAM_SIZE;
         float avgB = sumB / (float)TEAM_SIZE;
-
         int winner = (avgA >= globalAvg && avgA >= avgB) ? 0 : 1;
         matches[m].winner = winner;
 
@@ -350,26 +328,24 @@ static void simulateGame(Match *matches, int numMatches) {
             Player *pa = matches[m].teamA[i];
             Player *pb = matches[m].teamB[i];
 
-            /* signaux (à ajuster selon tes ranges) */
             int ingamePingsA = rand_range(0, 40);
-            int deathA = rand_range(0, 20);
-            int clickA = rand_range(50, 400);
+            int chatA        = rand_range(0, 25); /* nb messages: à calibrer */
+            int deathsA      = rand_range(0, 20);
+            int clickA       = rand_range(50, 400);
 
             int ingamePingsB = rand_range(0, 40);
-            int deathB = rand_range(0, 20);
-            int clickB = rand_range(50, 400);
+            int chatB        = rand_range(0, 25);
+            int deathsB      = rand_range(0, 20);
+            int clickB       = rand_range(50, 400);
 
-            pushHistory(pa, ingamePingsA, deathA, clickA);
-            pushHistory(pb, ingamePingsB, deathB, clickB);
+            pushHistory(pa, ingamePingsA, chatA, deathsA, clickA);
+            pushHistory(pb, ingamePingsB, chatB, deathsB, clickB);
 
             pa->totalGames++;
             pb->totalGames++;
 
-            if (winner == 0) {
-                pa->wins++; pb->losses++;
-            } else {
-                pb->wins++; pa->losses++;
-            }
+            if (winner == 0) { pa->wins++; pb->losses++; }
+            else { pb->wins++; pa->losses++; }
 
             time_t now = time(NULL);
             pa->lastMatchTime = now;
@@ -382,7 +358,7 @@ static void simulateGame(Match *matches, int numMatches) {
 }
 
 /* =========================
- * Exemple init joueurs
+ * Init joueurs
  * ========================= */
 static void initPlayer(Player *p, int idx) {
     snprintf(p->name, sizeof(p->name), "Player%03d", idx + 1);
@@ -409,40 +385,34 @@ static void initPlayer(Player *p, int idx) {
     p->historyCount = 0;
     for (int i = 0; i < HISTORY_MAX; i++) {
         p->ingamePingCountHistory[i] = 0;
+        p->chatUsageHistory[i] = 0;
         p->deathHistory[i] = 0;
         p->clickRateHistory[i] = 0;
     }
 }
 
 /* =========================
- * Main de test (optionnel)
+ * Main (optionnel)
  * ========================= */
 #ifdef BUILD_SIMULATOR_MAIN
 int main(void) {
     srand((unsigned int)time(NULL));
 
     Player players[N_PLAYERS];
-    for (int i = 0; i < N_PLAYERS; i++) {
-        initPlayer(&players[i], i);
-    }
+    for (int i = 0; i < N_PLAYERS; i++) initPlayer(&players[i], i);
 
-    int numMatches = 0;
     Match matches[N_PLAYERS / MATCH_SIZE];
+    int numMatches = 0;
 
     int NUM_GAMES = 50;
 
     placeInitialTeams(players, N_PLAYERS, matches, &numMatches);
 
     for (int g = 0; g < NUM_GAMES; g++) {
-        for (int i = 0; i < N_PLAYERS; i++) {
-            resetHiddenMMR(&players[i]);
-        }
+        for (int i = 0; i < N_PLAYERS; i++) resetHiddenMMR(&players[i]);
 
-        if (g >= 5) {
-            createMatchAdvanced(players, N_PLAYERS, matches, &numMatches);
-        } else {
-            placeInitialTeams(players, N_PLAYERS, matches, &numMatches);
-        }
+        if (g >= 5) createMatchAdvanced(players, N_PLAYERS, matches, &numMatches);
+        else placeInitialTeams(players, N_PLAYERS, matches, &numMatches);
 
         simulateGame(matches, numMatches);
     }
