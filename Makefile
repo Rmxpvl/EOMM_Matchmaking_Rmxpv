@@ -22,17 +22,13 @@ build: $(OBJ_DIR)/$(TARGET).o
 clean:
 	 rm -rf $(BIN_DIR)/$(TARGET) $(OBJ_DIR)/*.o
 
-# Test target
-# Add your test command here
-
 test:
 	echo "Running tests..."
 
 # Run target
 run: build
-	$(BIN_DIR)/$(TARGET}
+	$(BIN_DIR)/$(TARGET)
 
 # Pattern rules
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CC) $(CFLAGS) -c $< -o $@
-
