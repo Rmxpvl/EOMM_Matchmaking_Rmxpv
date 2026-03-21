@@ -106,6 +106,15 @@ void init_player(Player *p, int id, SkillLevel skill) {
     p->tilt_level        = 0;
     p->consecutive_trolls = 0;
     p->is_troll_pick     = 0;
+
+    /* Assign two distinct random preferred roles */
+    p->prefRoles[0] = rand() % ROLE_COUNT;
+    do {
+        p->prefRoles[1] = rand() % ROLE_COUNT;
+    } while (p->prefRoles[1] == p->prefRoles[0]);
+
+    p->current_role  = p->prefRoles[0];
+    p->is_autofilled = 0;
 }
 
 /*
@@ -416,6 +425,18 @@ void update_players_after_match(Match *m) {
         update_tilt(pa, a_won);
         update_tilt(pb, b_won);
 
+        /* Autofill post-match penalty */
+        if (pa->is_autofilled) {
+            float penalty = a_won ? AUTOFILL_POST_WIN_PENALTY : AUTOFILL_POST_LOSS_PENALTY;
+            pa->hidden_factor -= penalty;
+            pa->hidden_factor  = clampf(pa->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
+        }
+        if (pb->is_autofilled) {
+            float penalty = b_won ? AUTOFILL_POST_WIN_PENALTY : AUTOFILL_POST_LOSS_PENALTY;
+            pb->hidden_factor -= penalty;
+            pb->hidden_factor  = clampf(pb->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
+        }
+
         /* Soft reset check */
         apply_soft_reset(pa);
         apply_soft_reset(pb);
@@ -425,6 +446,81 @@ void update_players_after_match(Match *m) {
 /* =========================================================
  * Matchmaking
  * ========================================================= */
+
+/* =========================================================
+ * Autofill system
+ * ========================================================= */
+
+/*
+ * get_base_autofill_risk — base autofill probability (%) for a given role.
+ *
+ * Higher values for contested roles (ADC, Top), lower for protected or
+ * less-desired roles (Support, Jungle).
+ */
+float get_base_autofill_risk(int role) {
+    switch (role) {
+        case ROLE_SUPPORT: return AUTOFILL_RISK_SUPPORT;
+        case ROLE_JUNGLE:  return AUTOFILL_RISK_JUNGLE;
+        case ROLE_MID:     return AUTOFILL_RISK_MID;
+        case ROLE_TOP:     return AUTOFILL_RISK_TOP;
+        case ROLE_ADC:     return AUTOFILL_RISK_ADC;
+        default:           return AUTOFILL_RISK_TOP;
+    }
+}
+
+/*
+ * calculate_autofill_chance — compute effective autofill probability (%).
+ *
+ * Adds AUTOFILL_EOMM_BONUS when the player is in a NEGATIVE hidden state
+ * (losing streak) to drive the EOMM engagement loop.
+ */
+float calculate_autofill_chance(const Player *p, int role) {
+    float chance = get_base_autofill_risk(role);
+    if (p->hidden_state == STATE_NEGATIVE) {
+        chance += AUTOFILL_EOMM_BONUS;
+    }
+    return chance;
+}
+
+/*
+ * should_autofill — dice-roll against the autofill chance.
+ * Returns 1 if the player should be autofilled this game, 0 otherwise.
+ */
+int should_autofill(const Player *p, int role) {
+    float chance = calculate_autofill_chance(p, role);
+    return (randf() * 100.0f < chance) ? 1 : 0;
+}
+
+/*
+ * assign_autofill_role — force the player into a role outside their two
+ * preferred roles (prefRoles[0] and prefRoles[1]).
+ *
+ * Immediately applies:
+ *   - current_role set to a non-preferred role
+ *   - is_autofilled = 1
+ *   - tilt_level = AUTOFILL_TILT_LEVEL (2)
+ *   - hidden_factor -= AUTOFILL_FACTOR_PENALTY (0.05)
+ */
+void assign_autofill_role(Player *p) {
+    int candidates[ROLE_COUNT];
+    int count = 0;
+    for (int r = 0; r < ROLE_COUNT; r++) {
+        if (r != p->prefRoles[0] && r != p->prefRoles[1]) {
+            candidates[count++] = r;
+        }
+    }
+    if (count > 0) {
+        p->current_role = candidates[rand() % count];
+    } else {
+        /* Unreachable with ROLE_COUNT=5 and 2 distinct prefRoles,
+         * but kept as a defensive fallback if ROLE_COUNT is ever reduced. */
+        p->current_role = (p->prefRoles[0] + 1) % ROLE_COUNT;
+    }
+    p->is_autofilled  = 1;
+    p->tilt_level     = AUTOFILL_TILT_LEVEL;
+    p->hidden_factor -= AUTOFILL_FACTOR_PENALTY;
+    p->hidden_factor  = clampf(p->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
+}
 
 /*
  * create_matches_random — game 0: fully random teams.
@@ -460,8 +556,12 @@ static void create_matches_eomm(Player *players, int n,
     int nm = n / MATCH_SIZE;
     *num_matches = nm;
 
-    /* Refresh hidden state for all players */
-    for (int i = 0; i < n; i++) update_hidden_state(&players[i]);
+    /* Refresh hidden state for all players and reset per-game autofill flags */
+    for (int i = 0; i < n; i++) {
+        update_hidden_state(&players[i]);
+        players[i].is_autofilled = 0;
+        players[i].current_role  = players[i].prefRoles[0];
+    }
 
     int *assigned = (int *)calloc(n, sizeof(int));
     if (!assigned) return;
@@ -544,6 +644,19 @@ static void create_matches_eomm(Player *players, int n,
                 match->team_a[a_count++] = p;
             }
             assigned[p - players] = 1;
+        }
+
+        /* Autofill role assignment: for each player in this match, check
+         * whether the system should force them off their preferred role. */
+        for (int i = 0; i < TEAM_SIZE; i++) {
+            if (match->team_a[i] && should_autofill(match->team_a[i],
+                                                     match->team_a[i]->prefRoles[0])) {
+                assign_autofill_role(match->team_a[i]);
+            }
+            if (match->team_b[i] && should_autofill(match->team_b[i],
+                                                     match->team_b[i]->prefRoles[0])) {
+                assign_autofill_role(match->team_b[i]);
+            }
         }
 
         /* Log MMR imbalance warning */
