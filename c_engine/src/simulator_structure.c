@@ -3,8 +3,31 @@
  *
  * Simulateur EOMM (prototype) - pool 300 joueurs, parties uniquement 5v5.
  *
+ * =========================================================================
+ * OBJECTIF EOMM (Engagement-Optimized Matchmaking)
+ * =========================================================================
+ * L'objectif n'est PAS de créer des matchs parfaitement équilibrés, mais de
+ * MAXIMISER L'ENGAGEMENT en contrôlant les cycles de winning/losing streaks.
+ *
+ * Le système:
+ * - Vise ~50% de winrate global pour tous les joueurs sur le long terme
+ * - Manipule la COMPOSITION d'équipes (pas les gains/pertes de LP)
+ * - Crée des cycles naturels: périodes de victoires suivies de défaites forcées
+ * - Montre que même les meilleurs joueurs ne peuvent échapper aux streaks
+ * - Montre que même les mauvais joueurs ont des "moments de gloire"
+ *
+ * Winrates cibles:
+ * - Excellents joueurs (smurfs):   ~58-62% (meilleur, mais pas dominant)
+ * - Mauvais joueurs (hardstuck):   ~40-45% (pire, mais pas inexistant)
+ * - Joueurs normaux:               ~50%    (cycles avec streaks naturels)
+ *
+ * IMPORTANT: Pas de récompense pour la performance individuelle (LoL standard).
+ *            LP gains/losses sont fixes (+25/-25). Le biais vient uniquement
+ *            de la composition d'équipes.
+ * =========================================================================
+ *
  * Objectifs de simulation:
- * - Tous les joueurs commencent au même MMR visible (ex: 1500)
+ * - Tous les joueurs commencent au même MMR visible (ex: 1000)
  * - Game 1: matchmaking totalement random (tout le monde est "inconnu")
  * - Games 1..10: phase de placement (MMR delta x2)
  * - Après 10 games: MMR delta normal
@@ -15,6 +38,7 @@
  *
  * Hidden factor:
  * - pénalise si rôle/champion actuel hors top observé (seulement quand top connu)
+ * - pénalise si champion hors pool de rôle du joueur (wrong role pick)
  * - pénalise pings/chat/deaths/clickrate via historiques
  *   (chat via baseline EMA)
  */
@@ -206,7 +230,7 @@ static const char *skillLabel(SkillLevel s) {
         default:              return "normal";
     }
 }
- * ========================= */
+
 static int min_int(int a, int b) { return (a < b) ? a : b; }
 
 static float clampf(float x, float lo, float hi) {
