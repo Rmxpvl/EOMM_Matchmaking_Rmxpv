@@ -56,6 +56,30 @@
 /* Matchmaking balance tolerance (visible MMR spread) */
 #define MMR_BALANCE_TOLERANCE   200.0f
 
+/* LoL role identifiers */
+#define ROLE_TOP     0
+#define ROLE_JUNGLE  1
+#define ROLE_MID     2
+#define ROLE_ADC     3
+#define ROLE_SUPPORT 4
+#define ROLE_COUNT   5
+
+/* Autofill base risks (%) per role — higher = more likely to be autofilled */
+#define AUTOFILL_RISK_SUPPORT   5.0f  /* support is rarely contested   */
+#define AUTOFILL_RISK_JUNGLE    8.0f  /* jungle is protected / rare    */
+#define AUTOFILL_RISK_MID      12.0f  /* normal demand                 */
+#define AUTOFILL_RISK_TOP      15.0f  /* normal demand                 */
+#define AUTOFILL_RISK_ADC      18.0f  /* highly contested role         */
+
+/* EOMM dynamic autofill modifier: added when player is in NEGATIVE state */
+#define AUTOFILL_EOMM_BONUS    10.0f
+
+/* Autofill tilt penalties */
+#define AUTOFILL_TILT_LEVEL         2      /* immediate tilt level on autofill  */
+#define AUTOFILL_FACTOR_PENALTY     0.05f  /* immediate hidden_factor reduction  */
+#define AUTOFILL_POST_WIN_PENALTY   0.08f  /* additional penalty on win          */
+#define AUTOFILL_POST_LOSS_PENALTY  0.15f  /* additional penalty on loss         */
+
 /* Compensation boost for players on 7+ consecutive losses */
 #define COMPENSATION_THRESHOLD  7       /* activate at 7 consecutive losses */
 #define COMPENSATION_MAX_BONUS  0.50f   /* 50% max win-probability boost    */
@@ -136,6 +160,11 @@ typedef struct {
     int         tilt_level;          /* 0=none, 1=light tilt, 2=heavy tilt */
     int         consecutive_trolls;  /* count of back-to-back troll picks   */
     int         is_troll_pick;       /* 1 if trolling this game             */
+
+    /* Role preferences and autofill state */
+    int         prefRoles[2];        /* preferred roles (ROLE_* constants)  */
+    int         current_role;        /* role assigned for current game      */
+    int         is_autofilled;       /* 1 if autofilled this game           */
 } Player;
 
 /*
@@ -209,6 +238,21 @@ int simulate_match(Match *m);
 
 /* Apply win/loss bookkeeping + MMR + tilt for every player in the match. */
 void update_players_after_match(Match *m);
+
+/* --- Autofill --- */
+
+/* Return base autofill risk (%) for a given role (ROLE_* constant). */
+float get_base_autofill_risk(int role);
+
+/* Return total autofill chance (%) for a player considering their hidden_state. */
+float calculate_autofill_chance(const Player *p, int role);
+
+/* Dice-roll: returns 1 if this player should be autofilled for the given role. */
+int should_autofill(const Player *p, int role);
+
+/* Force the player into a role outside their two preferences; sets is_autofilled,
+ * tilt_level and applies the immediate hidden_factor penalty. */
+void assign_autofill_role(Player *p);
 
 /* --- Analytics --- */
 
