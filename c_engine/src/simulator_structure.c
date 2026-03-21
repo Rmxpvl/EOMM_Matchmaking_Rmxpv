@@ -45,8 +45,9 @@
 #define PLACEMENT_GAMES 10
 
 /* MMR */
-#define START_MMR 1500.0f
+#define START_MMR 1000.0f        /* all players begin at 1000 (Silver) */
 #define K_FACTOR_NORMAL 25.0f
+#define K_FACTOR_PLACEMENT 30.0f /* placement phase K-factor (faster calibration) */
 
 /* Off-schema / tilt */
 #define OFF_BASE 0.15f
@@ -86,6 +87,7 @@
 /* EOMM system constants     */
 /* ========================= */
 #define N_SMURFS                        30
+#define N_HARDSTUCK                     30
 /* N_TOTAL_PLAYERS documents the intended pool size (must equal N_PLAYERS). */
 #define N_TOTAL_PLAYERS                 300
 #define TILT_TEAM_MIN                   3
@@ -94,6 +96,16 @@
 #define VISIBLE_MMR_TOLERANCE           200.0f
 #define SMURF_WINNING_CHANCE            70
 #define SMURF_LOSING_REINFORCED_CHANCE  20
+
+/*
+ * SkillLevel — permanent skill category assigned at player creation.
+ * Determines base win-rate contribution to match outcome.
+ */
+typedef enum {
+    SKILL_NORMAL    = 0,  /* 80% of players — 50% base WR */
+    SKILL_SMURF     = 1,  /* 10% of players — 58% base WR */
+    SKILL_HARDSTUCK = 2   /* 10% of players — 42% base WR */
+} SkillLevel;
 
 /* Hidden MMR state: reflects tilt/health of a player */
 typedef enum {
@@ -145,6 +157,8 @@ typedef struct {
 
     /* EOMM fields */
     int            is_smurf;         /* 1 if this player is a smurf, 0 otherwise  */
+    SkillLevel     skill_level;      /* NORMAL / SMURF / HARDSTUCK                */
+    float          win_rate;         /* base win probability (0.50/0.58/0.42)     */
     HiddenMMRState hidden_mmr_state; /* current hidden MMR category               */
     int            tilt_level;       /* 0=none, 1=light tilt, 2=heavy tilt        */
 
@@ -184,6 +198,14 @@ typedef struct {
 
 /* =========================
  * Helpers
+ * ========================= */
+static const char *skillLabel(SkillLevel s) {
+    switch (s) {
+        case SKILL_SMURF:     return "smurf";
+        case SKILL_HARDSTUCK: return "hardstuck";
+        default:              return "normal";
+    }
+}
  * ========================= */
 static int min_int(int a, int b) { return (a < b) ? a : b; }
 
@@ -904,7 +926,7 @@ static void createMatchAdvanced(Player *players, int nPlayers, Match *matches, i
 static float mmr_k_for_player(const Player *p) {
     /* totalGames is incremented after match signals but before applying MMR in this sim;
        here, we interpret "first 10 games" as totalGames < 10 at time of applying MMR. */
-    if (p->totalGames < PLACEMENT_GAMES) return 2.0f * K_FACTOR_NORMAL;
+    if (p->totalGames < PLACEMENT_GAMES) return K_FACTOR_PLACEMENT;
     return K_FACTOR_NORMAL;
 }
 
@@ -1119,6 +1141,8 @@ static void initPlayer(Player *p, int idx) {
 
     /* EOMM fields */
     p->is_smurf         = 0;
+    p->skill_level      = SKILL_NORMAL;
+    p->win_rate         = 0.50f;
     p->hidden_mmr_state = HMR_NEUTRAL;
     p->tilt_level       = 0;
 
@@ -1158,16 +1182,27 @@ int main(void) {
     Player players[N_PLAYERS];
     for (int i = 0; i < N_PLAYERS; i++) initPlayer(&players[i], i);
 
-    /* Randomly select N_SMURFS distinct players to be smurfs
-     * (N_SMURFS / N_PLAYERS = 10% of playerbase).
-     * Uses a partial Fisher-Yates shuffle on an index array to avoid bias. */
+    /* Assign skill levels using a partial Fisher-Yates shuffle on an index array.
+     * Distribution: 10% smurfs, 10% hardstuck, 80% normal. */
     {
         int idx[N_PLAYERS];
         for (int i = 0; i < N_PLAYERS; i++) idx[i] = i;
+
+        /* Select N_SMURFS players */
         for (int i = 0; i < N_SMURFS; i++) {
             int j = i + rand() % (N_PLAYERS - i);
             int tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
-            players[idx[i]].is_smurf = 1;
+            players[idx[i]].is_smurf    = 1;
+            players[idx[i]].skill_level = SKILL_SMURF;
+            players[idx[i]].win_rate    = 0.58f;
+        }
+
+        /* Select N_HARDSTUCK players from remaining */
+        for (int i = N_SMURFS; i < N_SMURFS + N_HARDSTUCK; i++) {
+            int j = i + rand() % (N_PLAYERS - i);
+            int tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+            players[idx[i]].skill_level = SKILL_HARDSTUCK;
+            players[idx[i]].win_rate    = 0.42f;
         }
     }
 
@@ -1190,17 +1225,26 @@ int main(void) {
     for (int i = 0; i < 10; i++) {
         Player *p = &players[i];
         printf("%s mmr=%.0f factor=%.2f chatBaseline=%.2f loseStreak=%d W=%d L=%d G=%d "
-               "topRolesCount=%d topChampsCount=%d smurf=%d tilt=%d\n",
+               "topRolesCount=%d topChampsCount=%d skill=%s tilt=%d\n",
                p->name, p->visibleMMR, calculateHiddenFactor(p), p->chatBaselineAvg, p->loseStreak,
                p->wins, p->losses, p->totalGames, p->topRolesCount, p->topChampionsCount,
-               p->is_smurf, p->tilt_level);
+               skillLabel(p->skill_level), p->tilt_level);
     }
 
-    /* EOMM smurf winrate summary */
+    /* EOMM per-skill winrate summary */
     printf("\nSmurf winrate summary (%d smurfs):\n", N_SMURFS);
     for (int i = 0; i < N_PLAYERS; i++) {
         Player *p = &players[i];
-        if (!p->is_smurf) continue;
+        if (p->skill_level != SKILL_SMURF) continue;
+        float wr = (p->totalGames > 0) ? (100.0f * (float)p->wins / (float)p->totalGames) : 0.0f;
+        printf("  %s mmr=%.0f W=%d L=%d G=%d winrate=%.1f%%\n",
+               p->name, p->visibleMMR, p->wins, p->losses, p->totalGames, wr);
+    }
+
+    printf("\nHardstuck winrate summary (%d hardstuck):\n", N_HARDSTUCK);
+    for (int i = 0; i < N_PLAYERS; i++) {
+        Player *p = &players[i];
+        if (p->skill_level != SKILL_HARDSTUCK) continue;
         float wr = (p->totalGames > 0) ? (100.0f * (float)p->wins / (float)p->totalGames) : 0.0f;
         printf("  %s mmr=%.0f W=%d L=%d G=%d winrate=%.1f%%\n",
                p->name, p->visibleMMR, p->wins, p->losses, p->totalGames, wr);
