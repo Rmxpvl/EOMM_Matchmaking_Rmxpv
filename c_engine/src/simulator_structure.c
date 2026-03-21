@@ -230,7 +230,7 @@ static const char *skillLabel(SkillLevel s) {
         default:              return "normal";
     }
 }
- * ========================= */
+
 static int min_int(int a, int b) { return (a < b) ? a : b; }
 
 static float clampf(float x, float lo, float hi) {
