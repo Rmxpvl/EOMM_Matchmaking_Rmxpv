@@ -916,3 +916,33 @@ void print_final_report(const Player *players, int n, int total_games) {
     }
     printf("\n");
 }
+/* =========================================================
+ * Performance-based win rate calculation
+ * ========================================================= */
+
+float calculate_actual_winrate(const Player *p) {
+    if (!p) return 0.50f;
+    
+    /* Moyenne pondérée des stats de performance */
+    float weighted_perf = (
+        p->perf.mechanical_skill * 0.18f +
+        p->perf.decision_making * 0.22f +
+        p->perf.map_awareness * 0.15f +
+        p->perf.champion_proficiency * 0.12f +
+        p->perf.teamfight_positioning * 0.15f +
+        p->perf.wave_management * 0.10f +
+        p->perf.champion_pool_depth * 0.08f
+    );
+    
+    /* Convertir performance (0-1) en delta WR */
+    float perf_delta = (weighted_perf - 0.50f) * 2.0f;
+    float wr = 0.50f + (perf_delta * 0.10f);
+    
+    /* Tilt pénalise aussi */
+    if (p->hidden_state == HMR_NEGATIVE && p->tilt_level >= 2) {
+        float tilt_penalty = (1.0f - p->perf.tilt_resistance) * 0.10f;
+        wr -= tilt_penalty;
+    }
+    
+    return clampf(wr, 0.25f, 0.75f);
+}
