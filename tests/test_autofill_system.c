@@ -67,16 +67,16 @@ static void print_section(const char *title) {
 static void test_base_autofill_probabilities(void) {
     print_section("TEST 1: Base autofill probabilities");
 
-    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_SUPPORT), 5.0f,  0.001f,
-        "Support base risk = 5%");
-    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_JUNGLE),  8.0f,  0.001f,
-        "Jungle base risk  = 8%");
-    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_MID),    12.0f,  0.001f,
-        "Mid base risk     = 12%");
-    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_TOP),    15.0f,  0.001f,
-        "Top base risk     = 15%");
-    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_ADC),    18.0f,  0.001f,
-        "ADC base risk     = 18%");
+    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_SUPPORT), 2.0f,  0.001f,
+        "Support base risk = 2%");
+    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_JUNGLE),  3.0f,  0.001f,
+        "Jungle base risk  = 3%");
+    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_MID),     4.0f,  0.001f,
+        "Mid base risk     = 4%");
+    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_TOP),     5.0f,  0.001f,
+        "Top base risk     = 5%");
+    ASSERT_FLOAT_EQ(get_base_autofill_risk(ROLE_ADC),     6.0f,  0.001f,
+        "ADC base risk     = 6%");
 
     /* Ordering: Support < Jungle < Mid < Top < ADC */
     ASSERT(get_base_autofill_risk(ROLE_SUPPORT) < get_base_autofill_risk(ROLE_JUNGLE),
@@ -107,24 +107,24 @@ static void test_negative_state_bonus(void) {
     p.hidden_state = STATE_NEGATIVE;
     float neg_chance = calculate_autofill_chance(&p, ROLE_ADC);
     ASSERT_FLOAT_EQ(neg_chance, AUTOFILL_RISK_ADC + AUTOFILL_EOMM_BONUS, 0.001f,
-        "NEGATIVE state: ADC chance = 18% + 10% = 28%");
+        "NEGATIVE state: ADC chance = 6% + 3% = 9%");
 
     p.hidden_state = STATE_NEGATIVE;
     float neg_sup  = calculate_autofill_chance(&p, ROLE_SUPPORT);
     ASSERT_FLOAT_EQ(neg_sup, AUTOFILL_RISK_SUPPORT + AUTOFILL_EOMM_BONUS, 0.001f,
-        "NEGATIVE state: Support chance = 5% + 10% = 15%");
+        "NEGATIVE state: Support chance = 2% + 3% = 5%");
 
     /* NEUTRAL state: no bonus */
     p.hidden_state = STATE_NEUTRAL;
     float neu_chance = calculate_autofill_chance(&p, ROLE_ADC);
     ASSERT_FLOAT_EQ(neu_chance, AUTOFILL_RISK_ADC, 0.001f,
-        "NEUTRAL state: ADC chance = base 18% (no bonus)");
+        "NEUTRAL state: ADC chance = base 6% (no bonus)");
 
     /* POSITIVE state: no bonus */
     p.hidden_state = STATE_POSITIVE;
     float pos_chance = calculate_autofill_chance(&p, ROLE_ADC);
     ASSERT_FLOAT_EQ(pos_chance, AUTOFILL_RISK_ADC, 0.001f,
-        "POSITIVE state: ADC chance = base 18% (no bonus)");
+        "POSITIVE state: ADC chance = base 6% (no bonus)");
 
     /* Bonus only on NEGATIVE, not on others */
     ASSERT(neg_chance > neu_chance,
@@ -206,14 +206,16 @@ static void test_tilt_penalty_on_autofill(void) {
 
     Player p;
     memset(&p, 0, sizeof(p));
-    p.hidden_factor  = HIDDEN_FACTOR_START;  /* 1.0 */
-    p.hidden_state   = STATE_NEUTRAL;
-    p.prefRoles[0]   = ROLE_MID;
-    p.prefRoles[1]   = ROLE_JUNGLE;
-    p.tilt_level     = 0;
-    p.is_autofilled  = 0;
+    p.hidden_factor          = HIDDEN_FACTOR_START;  /* 1.0 */
+    p.hidden_state           = STATE_NEUTRAL;
+    p.prefRoles[0]           = ROLE_MID;
+    p.prefRoles[1]           = ROLE_JUNGLE;
+    p.tilt_level             = 0;
+    p.is_autofilled          = 0;
+    p.perf.tilt_resistance   = 0.80f;
 
-    float factor_before = p.hidden_factor;
+    float factor_before    = p.hidden_factor;
+    float tilt_res_before  = p.perf.tilt_resistance;
     assign_autofill_role(&p);
 
     ASSERT(p.tilt_level == AUTOFILL_TILT_LEVEL,
@@ -225,6 +227,11 @@ static void test_tilt_penalty_on_autofill(void) {
     ASSERT_FLOAT_EQ(p.hidden_factor,
         factor_before - AUTOFILL_FACTOR_PENALTY, 0.001f,
         "assign_autofill_role: hidden_factor -= AUTOFILL_FACTOR_PENALTY (0.05)");
+    ASSERT(p.perf.tilt_resistance < tilt_res_before,
+        "assign_autofill_role: tilt_resistance decreased (player angered)");
+    ASSERT_FLOAT_EQ(p.perf.tilt_resistance,
+        tilt_res_before - AUTOFILL_TILT_PENALTY, 0.001f,
+        "assign_autofill_role: tilt_resistance -= AUTOFILL_TILT_PENALTY (0.15)");
 }
 
 static void test_post_match_penalty_autofill_loss(void) {

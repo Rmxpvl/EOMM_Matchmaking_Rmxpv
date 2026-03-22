@@ -75,16 +75,16 @@ static void test_base_risk_values(void) {
     printf("    Top     : %.1f%%\n", get_base_autofill_risk(ROLE_TOP));
     printf("    ADC     : %.1f%%\n", get_base_autofill_risk(ROLE_ADC));
 
-    CHECK_FLOAT(get_base_autofill_risk(ROLE_SUPPORT),  5.0f, 0.001f,
-        "Support base risk = 5%");
-    CHECK_FLOAT(get_base_autofill_risk(ROLE_JUNGLE),   8.0f, 0.001f,
-        "Jungle base risk  = 8%");
-    CHECK_FLOAT(get_base_autofill_risk(ROLE_MID),     12.0f, 0.001f,
-        "Mid base risk     = 12%");
-    CHECK_FLOAT(get_base_autofill_risk(ROLE_TOP),     15.0f, 0.001f,
-        "Top base risk     = 15%");
-    CHECK_FLOAT(get_base_autofill_risk(ROLE_ADC),     18.0f, 0.001f,
-        "ADC base risk     = 18%");
+    CHECK_FLOAT(get_base_autofill_risk(ROLE_SUPPORT),  2.0f, 0.001f,
+        "Support base risk = 2%");
+    CHECK_FLOAT(get_base_autofill_risk(ROLE_JUNGLE),   3.0f, 0.001f,
+        "Jungle base risk  = 3%");
+    CHECK_FLOAT(get_base_autofill_risk(ROLE_MID),      4.0f, 0.001f,
+        "Mid base risk     = 4%");
+    CHECK_FLOAT(get_base_autofill_risk(ROLE_TOP),      5.0f, 0.001f,
+        "Top base risk     = 5%");
+    CHECK_FLOAT(get_base_autofill_risk(ROLE_ADC),      6.0f, 0.001f,
+        "ADC base risk     = 6%");
 
     /* Ordering: Support < Jungle < Mid < Top < ADC */
     CHECK(get_base_autofill_risk(ROLE_SUPPORT) < get_base_autofill_risk(ROLE_JUNGLE),
@@ -313,9 +313,9 @@ static void test_should_autofill_with_negative_bonus(void) {
         CHECK(negative_rate > neutral_rate, msg1);
 
         snprintf(msg2, sizeof(msg2),
-                 "%s: NEGATIVE bonus delta %.2f%% in range [8%%-12%%]",
+                 "%s: NEGATIVE bonus delta %.2f%% in range [2%%-4%%]",
                  role_name(role), delta);
-        CHECK(delta >= 8.0f && delta <= 12.0f, msg2);
+        CHECK(delta >= 2.0f && delta <= 4.0f, msg2);
     }
 }
 

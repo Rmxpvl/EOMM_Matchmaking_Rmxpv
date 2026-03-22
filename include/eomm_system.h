@@ -67,20 +67,21 @@
 #define ROLE_COUNT   5
 
 /* Autofill base risks (%) per role — higher = more likely to be autofilled */
-#define AUTOFILL_RISK_SUPPORT   5.0f  /* support is rarely contested   */
-#define AUTOFILL_RISK_JUNGLE    8.0f  /* jungle is protected / rare    */
-#define AUTOFILL_RISK_MID      12.0f  /* normal demand                 */
-#define AUTOFILL_RISK_TOP      15.0f  /* normal demand                 */
-#define AUTOFILL_RISK_ADC      18.0f  /* highly contested role         */
+#define AUTOFILL_RISK_SUPPORT   2.0f  /* support is rarely contested   */
+#define AUTOFILL_RISK_JUNGLE    3.0f  /* jungle is protected / rare    */
+#define AUTOFILL_RISK_MID       4.0f  /* normal demand                 */
+#define AUTOFILL_RISK_TOP       5.0f  /* normal demand                 */
+#define AUTOFILL_RISK_ADC       6.0f  /* highly contested role         */
 
 /* EOMM dynamic autofill modifier: added when player is in NEGATIVE state */
-#define AUTOFILL_EOMM_BONUS    10.0f
+#define AUTOFILL_EOMM_BONUS     3.0f  /* max effective chance: 6%+3% = 9% < 10% */
 
 /* Autofill tilt penalties */
-#define AUTOFILL_TILT_LEVEL         2      /* immediate tilt level on autofill  */
-#define AUTOFILL_FACTOR_PENALTY     0.05f  /* immediate hidden_factor reduction  */
-#define AUTOFILL_POST_WIN_PENALTY   0.08f  /* additional penalty on win          */
-#define AUTOFILL_POST_LOSS_PENALTY  0.15f  /* additional penalty on loss         */
+#define AUTOFILL_TILT_LEVEL         2      /* immediate tilt level on autofill              */
+#define AUTOFILL_FACTOR_PENALTY     0.05f  /* immediate hidden_factor reduction              */
+#define AUTOFILL_TILT_PENALTY       0.15f  /* immediate tilt_resistance reduction (−15%)    */
+#define AUTOFILL_POST_WIN_PENALTY   0.08f  /* additional hidden_factor penalty on win        */
+#define AUTOFILL_POST_LOSS_PENALTY  0.15f  /* additional hidden_factor penalty on loss       */
 
 /* Compensation boost for players on 7+ consecutive losses */
 #define COMPENSATION_THRESHOLD  7       /* activate at 7 consecutive losses */

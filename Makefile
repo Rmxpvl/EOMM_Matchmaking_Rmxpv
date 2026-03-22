@@ -37,8 +37,13 @@ TEST_PERF_SRCS    = $(SRC_DIR)/eomm_system.c tests/test_performance_stats.c
 TEST_PERF_INCLUDE = -I$(INC_DIR)
 TEST_PERF_CFLAGS  = -Wall -Wextra -std=c99 -lm
 
+# ── 50-games detailed simulation test target ─────────────
+TEST_50G_TARGET  = $(BIN_DIR)/test_50_games_detailed
+TEST_50G_SRCS    = $(SRC_DIR)/eomm_system.c tests/test_50_games_detailed.c
+TEST_50G_INCLUDE = -I$(INC_DIR)
+
 # ── Default target ────────────────────────────────────────
-.PHONY: all build eomm clean run test test_autofill test_debug_autofill test_coefficient_analysis test_performance_stats
+.PHONY: all build eomm clean run test test_autofill test_debug_autofill test_coefficient_analysis test_performance_stats test_50_games_detailed
 
 all: eomm
 
@@ -85,6 +90,12 @@ test_performance_stats: $(BIN_DIR) $(TEST_PERF_TARGET)
 $(TEST_PERF_TARGET): $(TEST_PERF_SRCS) $(INC_DIR)/eomm_system.h
 	$(CC) $(CFLAGS) $(TEST_PERF_INCLUDE) -o $@ $(TEST_PERF_SRCS) -lm
 
+# Build 50-games detailed simulation test
+test_50_games_detailed: $(BIN_DIR) $(TEST_50G_TARGET)
+
+$(TEST_50G_TARGET): $(TEST_50G_SRCS) $(INC_DIR)/eomm_system.h
+	$(CC) $(CFLAGS) $(TEST_50G_INCLUDE) -o $@ $(TEST_50G_SRCS)
+
 # Run EOMM system (interactive)
 run: eomm
 	$(EOMM_TARGET)
@@ -93,7 +104,7 @@ run: eomm
 build: eomm
 
 # Test target
-test: test_autofill test_debug_autofill test_coefficient_analysis test_performance_stats
+test: test_autofill test_debug_autofill test_coefficient_analysis test_performance_stats test_50_games_detailed
 	@echo "Running autofill test suite..."
 	$(TEST_AUTOFILL_TARGET)
 	@echo "Test suite complete."
@@ -109,6 +120,10 @@ test: test_autofill test_debug_autofill test_coefficient_analysis test_performan
 	@echo "Running performance stats test..."
 	$(TEST_PERF_TARGET)
 	@echo "Performance stats test complete."
+	@echo ""
+	@echo "Running 50-games detailed simulation..."
+	$(TEST_50G_TARGET)
+	@echo "50-games simulation complete."
 
 # Clean
 clean:
