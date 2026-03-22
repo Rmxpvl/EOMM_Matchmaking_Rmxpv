@@ -68,7 +68,10 @@ except ImportError:
 # ── Path resolution ────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..'))
-MATCH_HISTORY_PATH = os.path.join(PROJECT_ROOT, 'data', 'match_history.json')
+MATCH_HISTORY_PATH = os.environ.get(
+    'EOMM_MATCH_HISTORY',
+    os.path.join(PROJECT_ROOT, 'data', 'match_history.json')
+)
 EOMM_SYSTEM_C_PATH = os.path.join(PROJECT_ROOT, 'src', 'eomm_system.c')
 DOCS_ASSETS_DIR = os.path.join(PROJECT_ROOT, 'docs', 'assets')
 
@@ -79,8 +82,21 @@ def _clamp(v, min_v, max_v):
 
 
 def _load_match_history():
+    if not os.path.isfile(MATCH_HISTORY_PATH):
+        print(f"ERROR: Match history file not found: {MATCH_HISTORY_PATH}")
+        print(f"  Run the EOMM engine to generate match data, or set the")
+        print(f"  EOMM_MATCH_HISTORY environment variable to point to your file.")
+        sys.exit(1)
     with open(MATCH_HISTORY_PATH, 'r') as f:
         return json.load(f)
+
+
+def _require_eomm_c():
+    if not os.path.isfile(EOMM_SYSTEM_C_PATH):
+        print(f"ERROR: C source file not found: {EOMM_SYSTEM_C_PATH}")
+        print(f"  Make sure you are running this from the project root directory")
+        print(f"  or that '{EOMM_SYSTEM_C_PATH}' exists.")
+        sys.exit(1)
 
 
 def _require_numpy():
@@ -502,6 +518,7 @@ def main_analyze_streaks():
 
 def main_fix_hardstuck_blend():
     """Original: fix_hardstuck_blend.py — Change hardstuck blend to 70% base + 30% HF."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -545,6 +562,7 @@ def main_fix_hardstuck_blend():
 
 def main_fix_hardstuck_final():
     """Original: fix_hardstuck_final.py — Revert blend to flat + drastic hardstuck reduction."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -591,6 +609,7 @@ def main_fix_hardstuck_final():
 
 def main_fix_hardstuck_perf():
     """Original: fix_hardstuck_perf.py — Reduce hardstuck performance range [0.05, 0.25]."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -627,6 +646,7 @@ def main_fix_hardstuck_perf():
 
 def main_fix_hardstuck_v2():
     """Original: fix_hardstuck_v2.py — Further reduce hardstuck range + 2x tilt penalty."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -667,6 +687,7 @@ def main_fix_hardstuck_v2():
 
 def main_fix_hardstuck_wr():
     """Original: fix_hardstuck_wr.py — Apply per-skill hf_blend in calculate_actual_winrate."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -716,6 +737,7 @@ def main_fix_hardstuck_wr():
 
 def main_fix_update_tilt():
     """Original: fix_update_tilt.py — Patch update_tilt() with tilt/arrogance logic."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -812,6 +834,7 @@ def main_fix_update_tilt():
 
 def main_fix_wr():
     """Original: fix_wr.py — Patch hidden_factor blending in calculate_actual_winrate."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1488,6 +1511,7 @@ def main_visualize_hidden_vs_wr():
 
 def main_boost_smurf_wr():
     """Original: boost_smurf_wr.py — Revert hardstuck range + add +3% smurf bonus."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1525,6 +1549,7 @@ def main_boost_smurf_wr():
 
 def main_calibrate_smurf_peak():
     """Original: calibrate_smurf_peak.py — Reduce smurf peak range + remove smurf bonus."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1774,6 +1799,7 @@ win/lose streaks for everyone equally. Rather, it should:
 
 def main_final_smurf_tune():
     """Original: final_smurf_tune.py — Further reduce smurf peak range [0.62, 0.78]."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1798,6 +1824,7 @@ def main_final_smurf_tune():
 
 def main_patch_calculate_wr():
     """Original: patch_calculate_wr.py — Patch calculate_actual_winrate() via regex/manual."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1930,6 +1957,7 @@ def main_player_history(player_id=None):
 
 def main_reduce_hardstuck_kfactor():
     """Original: reduce_hardstuck_kfactor.py — Add 0.7x K-factor for hardstuck players."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1957,6 +1985,7 @@ def main_reduce_hardstuck_kfactor():
 
 def main_lower_hardstuck_kfactor():
     """Original: lower_hardstuck_kfactor.py — Lower hardstuck K-factor to 0.5x."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1979,6 +2008,7 @@ def main_lower_hardstuck_kfactor():
 
 def main_increase_loss_penalty():
     """Original: increase_loss_penalty.py — Increase FACTOR_LOSS_PENALTY to 0.30."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
@@ -1994,6 +2024,7 @@ def main_increase_loss_penalty():
 
 def main_stabilize_hardstuck():
     """Original: stabilize_hardstuck.py — Expand hardstuck range to [0.08, 0.28]."""
+    _require_eomm_c()
     with open(EOMM_SYSTEM_C_PATH, 'r') as f:
         content = f.read()
 
