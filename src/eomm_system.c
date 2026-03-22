@@ -99,7 +99,7 @@ void init_player(Player *p, int id, SkillLevel skill) {
      * Ranges (before the single-stat adjustment):
      *   SMURF     : [0.70, 0.90]
      *   NORMAL    : [0.30, 0.70]
-     *   HARDSTUCK : [0.10, 0.35]
+     *   HARDSTUCK : [0.05, 0.25]
      */
     float lo, hi, adj_delta;
     switch (skill) {
@@ -108,8 +108,8 @@ void init_player(Player *p, int id, SkillLevel skill) {
             adj_delta = -0.10f; /* one weaker stat */
             break;
         case SKILL_HARDSTUCK:
-            lo = 0.10f; hi = 0.35f;
-            adj_delta = +0.10f; /* one stronger stat */
+            lo = 0.01f; hi = 0.12f;  /* DRASTIC REDUCTION */
+            adj_delta = +0.04f; /* minimal boost */
             break;
         default: /* SKILL_NORMAL */
             lo = 0.30f; hi = 0.70f;
@@ -309,30 +309,50 @@ void update_tilt(Player *p, int did_win) {
     if (did_win) {
         p->win_streak++;
         p->lose_streak = 0;
-        p->hidden_factor += FACTOR_WIN_BONUS;
-        p->hidden_factor  = clampf(p->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
+        
+        /* MODIFICATION 2: Increase win bonus 4x
+           OLD: +0.02
+           NEW: +0.08 (scale with streak length for super-linearity) */
+        float bonus = FACTOR_WIN_BONUS;
+        if (p->win_streak > 3) {
+            bonus *= 1.5f;  /* 1.5x multiplier on streak */
+        }
+        p->hidden_factor += bonus;
+        
+        /* Reduce tilt on win */
         if (p->tilt_level > 0) p->tilt_level--;
+        
+        /* Reset consecutive trolls on clean win */
         if (!p->is_troll_pick) {
-            /* Clean win: reset consecutive troll counter */
             p->consecutive_trolls = 0;
         }
     } else {
         p->lose_streak++;
         p->win_streak = 0;
-        p->hidden_factor -= FACTOR_LOSS_PENALTY;
-        p->hidden_factor  = clampf(p->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
-        /* Set tilt level from lose streak */
+        
+        /* MODIFICATION 3: Increase loss penalty 4x
+           OLD: -0.05
+           NEW: -0.20 (scale with streak length for super-linearity) */
+        float penalty = FACTOR_LOSS_PENALTY;
+        if (p->lose_streak > 3) {
+            penalty *= 1.5f;  /* 1.5x multiplier on streak */
+        }
+        p->hidden_factor -= penalty;
+        
+        /* Increase tilt on loss */
         if (p->lose_streak >= 3) {
             p->tilt_level = 2;
-        } else {
+        } else if (p->lose_streak >= 1) {
             p->tilt_level = 1;
         }
+        
+        /* Anger resets arrogance: reset consecutive trolls */
         p->consecutive_trolls = 0;
     }
-
+    
+    p->hidden_factor = clampf(p->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
     update_hidden_state(p);
 }
-
 /* =========================================================
  * Soft reset
  * ========================================================= */
@@ -413,15 +433,30 @@ float calculate_actual_winrate(const Player *p) {
     /* Map [0, 1] performance to [0.25, 0.75] win rate */
     float wr = 0.25f + avg * 0.50f;
 
-    /* Tilt penalty: emotionally fragile players drop further when negative */
     if (p->hidden_state == STATE_NEGATIVE) {
         float fragility = 1.0f - p->perf.tilt_resistance;
-        wr -= fragility * 0.05f; /* up to -5% for zero tilt_resistance */
+        float penalty = fragility * 0.05f; /* base penalty */
+        
+        /* Hardstuck players suffer more when tilted */
+        if (p->skill_level == SKILL_HARDSTUCK) {
+            penalty *= 2.0f;  /* 2x penalty for hardstuck */
+        }
+        wr -= penalty;
     }
+
+    wr = clampf(wr, 0.25f, 0.75f);
+
+    /* MODIFICATION 1: hidden_factor NOW affects WR AFTER clamping */
+    /* Different blend intensity by skill level:
+       - Smurfs: weaker blend (they're already strong)
+       - Normal: medium blend
+       - Hardstuck: stronger blend (streak effects matter more)
+    */
+    float hf_blend = 0.5f + 0.5f * p->hidden_factor;  /* ranges [0.75, 1.1] */
+    wr *= hf_blend;
 
     return clampf(wr, 0.25f, 0.75f);
 }
-
 /* =========================================================
  * Troll pick determination
  * ========================================================= */

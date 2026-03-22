@@ -73,7 +73,7 @@ static int read_int(const char *prompt, int min_val) {
  * Progress is printed every 10 games and at the placement boundary.
  */
 static void run_simulation(Player *players, int n_players,
-                            Match *matches, int n_games) {
+                            Match *matches, int n_games, MatchHistory *history) {
     for (int g = 0; g < n_games; g++) {
         int num_matches;
         create_matches(players, n_players, matches, &num_matches, g);
@@ -82,6 +82,9 @@ static void run_simulation(Player *players, int n_players,
             determine_troll_picks(&matches[m]);
             simulate_match(&matches[m]);
             update_players_after_match(&matches[m]);
+            
+            /* Add match to history */
+            history_add_match(history, &matches[m], m + g * num_matches, g);
         }
 
         /* Progress feedback */
@@ -151,6 +154,15 @@ int main(void) {
         return 1;
     }
 
+    /* ---- Allocate match history ---- */
+    MatchHistory *history = history_create(n_games * max_matches);
+    if (!history) {
+        fprintf(stderr, "Error: failed to allocate match history.\n");
+        free(matches);
+        free(players);
+        return 1;
+    }
+
     /* ---- Initialise ---- */
     srand((unsigned int)time(NULL));
     init_players(players, n_players);
@@ -159,12 +171,17 @@ int main(void) {
     printf("─────────────────────────────────────────────────────────\n\n");
 
     /* ---- Run ---- */
-    run_simulation(players, n_players, matches, n_games);
+    run_simulation(players, n_players, matches, n_games, history);
 
     /* ---- Final report ---- */
     print_final_report(players, n_players, n_games);
 
+    /* ---- Export match history ---- */
+    history_export_json(history, players, n_players, "match_history.json");
+    printf("\n✓ Match history exported to match_history.json\n");
+
     /* ---- Clean up ---- */
+    history_free(history);
     free(matches);
     free(players);
     return 0;
