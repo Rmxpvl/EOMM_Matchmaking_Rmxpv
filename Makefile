@@ -12,34 +12,34 @@ OBJ_DIR = obj
 
 # ── EOMM system target ────────────────────────────────────
 EOMM_TARGET  = $(BIN_DIR)/eomm_system
-EOMM_SRCS    = $(SRC_DIR)/eomm_system.c $(SRC_DIR)/eomm_main.c
-EOMM_OBJS    = $(OBJ_DIR)/eomm_system.o $(OBJ_DIR)/eomm_main.o
+EOMM_SRCS    = $(SRC_DIR)/eomm_system.c $(SRC_DIR)/match_history.c $(SRC_DIR)/eomm_main.c
+EOMM_OBJS    = $(OBJ_DIR)/eomm_system.o $(OBJ_DIR)/match_history.o $(OBJ_DIR)/eomm_main.o
 EOMM_INCLUDE = -I$(INC_DIR)
 
 # ── Autofill test suite target ────────────────────────────
 TEST_AUTOFILL_TARGET = $(BIN_DIR)/test_autofill_system
-TEST_AUTOFILL_SRCS   = $(SRC_DIR)/eomm_system.c tests/test_autofill_system.c
+TEST_AUTOFILL_SRCS   = $(SRC_DIR)/eomm_system.c $(SRC_DIR)/match_history.c tests/test_autofill_system.c
 TEST_AUTOFILL_INCLUDE = -I$(INC_DIR)
 
 # ── Autofill debug test target ────────────────────────────
 TEST_DEBUG_TARGET  = $(BIN_DIR)/test_debug_autofill
-TEST_DEBUG_SRCS    = $(SRC_DIR)/eomm_system.c tests/test_debug_autofill.c
+TEST_DEBUG_SRCS    = $(SRC_DIR)/eomm_system.c $(SRC_DIR)/match_history.c tests/test_debug_autofill.c
 TEST_DEBUG_INCLUDE = -I$(INC_DIR)
 
 # ── Coefficient analysis test target ──────────────────────
 TEST_COEFF_TARGET  = $(BIN_DIR)/test_coefficient_analysis
-TEST_COEFF_SRCS    = $(SRC_DIR)/eomm_system.c tests/test_coefficient_analysis.c
+TEST_COEFF_SRCS    = $(SRC_DIR)/eomm_system.c $(SRC_DIR)/match_history.c tests/test_coefficient_analysis.c
 TEST_COEFF_INCLUDE = -I$(INC_DIR)
 
 # ── Performance stats test target ────────────────────────
 TEST_PERF_TARGET  = $(BIN_DIR)/test_performance_stats
-TEST_PERF_SRCS    = $(SRC_DIR)/eomm_system.c tests/test_performance_stats.c
+TEST_PERF_SRCS    = $(SRC_DIR)/eomm_system.c $(SRC_DIR)/match_history.c tests/test_performance_stats.c
 TEST_PERF_INCLUDE = -I$(INC_DIR)
 TEST_PERF_CFLAGS  = -Wall -Wextra -std=c99 -lm
 
 # ── 50-games detailed simulation test target ─────────────
 TEST_50G_TARGET  = $(BIN_DIR)/test_50_games_detailed
-TEST_50G_SRCS    = $(SRC_DIR)/eomm_system.c tests/test_50_games_detailed.c
+TEST_50G_SRCS    = $(SRC_DIR)/eomm_system.c $(SRC_DIR)/match_history.c tests/test_50_games_detailed.c
 TEST_50G_INCLUDE = -I$(INC_DIR)
 
 # ── Default target ────────────────────────────────────────
@@ -54,6 +54,9 @@ $(EOMM_TARGET): $(EOMM_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(OBJ_DIR)/eomm_system.o: $(SRC_DIR)/eomm_system.c $(INC_DIR)/eomm_system.h
+	$(CC) $(CFLAGS) $(EOMM_INCLUDE) -c $< -o $@
+
+$(OBJ_DIR)/match_history.o: $(SRC_DIR)/match_history.c $(INC_DIR)/eomm_system.h
 	$(CC) $(CFLAGS) $(EOMM_INCLUDE) -c $< -o $@
 
 $(OBJ_DIR)/eomm_main.o: $(SRC_DIR)/eomm_main.c $(INC_DIR)/eomm_system.h

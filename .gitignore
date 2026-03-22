@@ -22,6 +22,9 @@ obj/
 # Generated test output
 autofill_stats.csv
 
+# Match history export (generated at runtime)
+match_history.json
+
 # macOS system files
 .DS_Store
 

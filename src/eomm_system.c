@@ -190,14 +190,11 @@ void init_players(Player *players, int n) {
         init_player(&players[i], i, skill);
     }
 
-    /* Shuffle so players of each type are spread across the pool */
+    /* Shuffle so players of each type are spread across the pool.
+     * IDs were already assigned before the shuffle and must NOT be
+     * re-assigned afterwards — doing so would detach each player's ID
+     * from their skill profile. */
     shuffle_players(players, n);
-
-    /* Re-assign sequential IDs after shuffling */
-    for (int i = 0; i < n; i++) {
-        players[i].id = i;
-        snprintf(players[i].name, PLAYER_NAME_LEN, "Player%04d", i + 1);
-    }
 }
 
 /* =========================================================
@@ -238,6 +235,11 @@ float calculate_troll_probability(const Player *p) {
 
 /*
  * apply_troll_penalty — disrespect punishment, applied even on wins.
+ *
+ * ⚠  INTENTIONAL DESIGN: the penalty is applied BEFORE simulate_match().
+ * This means a player who troll-picks is punished regardless of the outcome.
+ * Trolling is an attitude issue, not a performance issue — even winners who
+ * troll disrupt teammates and deserve a hidden_factor reduction.
  *
  * Penalty formula:
  *   penalty = TROLL_PENALTY_BASE * TROLL_PENALTY_SCALE
@@ -428,21 +430,30 @@ float calculate_actual_winrate(const Player *p) {
 
 /*
  * determine_troll_picks — roll troll probability for every player in a match.
- * Applies troll penalty immediately (before MMR update) even on a win.
+ *
+ * ⚠  Troll penalty is applied here, BEFORE simulate_match(), because the
+ * punishment is attitude-based: even a troll who wins still harmed their
+ * team's experience.  See apply_troll_penalty() for details.
+ *
+ * NULL slots are skipped safely (can occur when the player pool is too
+ * small to completely fill both teams).
  */
 void determine_troll_picks(Match *m) {
     for (int i = 0; i < TEAM_SIZE; i++) {
         Player *pa = m->team_a[i];
         Player *pb = m->team_b[i];
 
-        float prob_a = calculate_troll_probability(pa);
-        float prob_b = calculate_troll_probability(pb);
+        if (pa != NULL) {
+            float prob_a = calculate_troll_probability(pa);
+            pa->is_troll_pick = (randf() * 100.0f < prob_a) ? 1 : 0;
+            if (pa->is_troll_pick) apply_troll_penalty(pa);
+        }
 
-        pa->is_troll_pick = (randf() * 100.0f < prob_a) ? 1 : 0;
-        pb->is_troll_pick = (randf() * 100.0f < prob_b) ? 1 : 0;
-
-        if (pa->is_troll_pick) apply_troll_penalty(pa);
-        if (pb->is_troll_pick) apply_troll_penalty(pb);
+        if (pb != NULL) {
+            float prob_b = calculate_troll_probability(pb);
+            pb->is_troll_pick = (randf() * 100.0f < prob_b) ? 1 : 0;
+            if (pb->is_troll_pick) apply_troll_penalty(pb);
+        }
     }
 }
 
@@ -459,6 +470,8 @@ void determine_troll_picks(Match *m) {
  * Win probability for team_a = power_a / (power_a + power_b).
  * Result is stochastic (random roll against win probability).
  *
+ * NULL slots are skipped safely (contribute 0 to team power).
+ *
  * Compensation boost: if any team_a player has >= COMPENSATION_THRESHOLD
  * consecutive losses the highest applicable bonus is applied to win_prob_a
  * and clamped to [0.05, 0.95].  This is transparent to the player.
@@ -467,8 +480,14 @@ int simulate_match(Match *m) {
     float power_a = 0.0f, power_b = 0.0f;
 
     for (int i = 0; i < TEAM_SIZE; i++) {
-        power_a += effective_mmr(m->team_a[i]) * calculate_actual_winrate(m->team_a[i]);
-        power_b += effective_mmr(m->team_b[i]) * calculate_actual_winrate(m->team_b[i]);
+        if (m->team_a[i] != NULL) {
+            power_a += effective_mmr(m->team_a[i])
+                       * calculate_actual_winrate(m->team_a[i]);
+        }
+        if (m->team_b[i] != NULL) {
+            power_b += effective_mmr(m->team_b[i])
+                       * calculate_actual_winrate(m->team_b[i]);
+        }
     }
 
     float total = power_a + power_b;
@@ -480,8 +499,10 @@ int simulate_match(Match *m) {
      * design, so compensating team_b would cancel the EOMM intent. */
     float max_bonus = 0.0f;
     for (int i = 0; i < TEAM_SIZE; i++) {
-        float bonus = get_compensation_bonus(m->team_a[i]->lose_streak);
-        if (bonus > max_bonus) max_bonus = bonus;
+        if (m->team_a[i] != NULL) {
+            float bonus = get_compensation_bonus(m->team_a[i]->lose_streak);
+            if (bonus > max_bonus) max_bonus = bonus;
+        }
     }
     if (max_bonus > 0.0f) {
         win_prob_a = clampf(win_prob_a * (1.0f + max_bonus), 0.05f, 0.95f);
@@ -498,6 +519,9 @@ int simulate_match(Match *m) {
 /*
  * update_players_after_match — apply win/loss bookkeeping, MMR change,
  * tilt update and soft reset for every player in the match.
+ *
+ * NULL slots are skipped safely (can occur when the pool did not fill
+ * both teams completely).
  */
 void update_players_after_match(Match *m) {
     int winner = m->winner; /* 0=team_a, 1=team_b */
@@ -509,36 +533,57 @@ void update_players_after_match(Match *m) {
         int a_won = (winner == 0);
         int b_won = (winner == 1);
 
-        /* Counters */
-        pa->total_games++;
-        pb->total_games++;
+        if (pa != NULL) {
+            /* Counters */
+            pa->total_games++;
+            if (a_won) pa->wins++;
+            else       pa->losses++;
 
-        if (a_won) { pa->wins++;   pb->losses++; }
-        else       { pa->losses++; pb->wins++;   }
+            /* MMR */
+            update_mmr(pa, a_won);
 
-        /* MMR */
-        update_mmr(pa, a_won);
-        update_mmr(pb, b_won);
+            /* Tilt / hidden factor */
+            update_tilt(pa, a_won);
 
-        /* Tilt / hidden factor */
-        update_tilt(pa, a_won);
-        update_tilt(pb, b_won);
+            /* Autofill post-match penalty */
+            if (pa->is_autofilled) {
+                float penalty = a_won ? AUTOFILL_POST_WIN_PENALTY
+                                      : AUTOFILL_POST_LOSS_PENALTY;
+                pa->hidden_factor -= penalty;
+                pa->hidden_factor  = clampf(pa->hidden_factor,
+                                            HIDDEN_FACTOR_MIN,
+                                            HIDDEN_FACTOR_MAX);
+            }
 
-        /* Autofill post-match penalty */
-        if (pa->is_autofilled) {
-            float penalty = a_won ? AUTOFILL_POST_WIN_PENALTY : AUTOFILL_POST_LOSS_PENALTY;
-            pa->hidden_factor -= penalty;
-            pa->hidden_factor  = clampf(pa->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
+            /* Soft reset check */
+            apply_soft_reset(pa);
         }
-        if (pb->is_autofilled) {
-            float penalty = b_won ? AUTOFILL_POST_WIN_PENALTY : AUTOFILL_POST_LOSS_PENALTY;
-            pb->hidden_factor -= penalty;
-            pb->hidden_factor  = clampf(pb->hidden_factor, HIDDEN_FACTOR_MIN, HIDDEN_FACTOR_MAX);
-        }
 
-        /* Soft reset check */
-        apply_soft_reset(pa);
-        apply_soft_reset(pb);
+        if (pb != NULL) {
+            /* Counters */
+            pb->total_games++;
+            if (b_won) pb->wins++;
+            else       pb->losses++;
+
+            /* MMR */
+            update_mmr(pb, b_won);
+
+            /* Tilt / hidden factor */
+            update_tilt(pb, b_won);
+
+            /* Autofill post-match penalty */
+            if (pb->is_autofilled) {
+                float penalty = b_won ? AUTOFILL_POST_WIN_PENALTY
+                                      : AUTOFILL_POST_LOSS_PENALTY;
+                pb->hidden_factor -= penalty;
+                pb->hidden_factor  = clampf(pb->hidden_factor,
+                                            HIDDEN_FACTOR_MIN,
+                                            HIDDEN_FACTOR_MAX);
+            }
+
+            /* Soft reset check */
+            apply_soft_reset(pb);
+        }
     }
 }
 

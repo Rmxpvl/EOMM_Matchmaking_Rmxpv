@@ -69,19 +69,31 @@ static int read_int(const char *prompt, int min_val) {
  *   2. Determine troll picks for all players in each match
  *   3. Simulate match outcomes
  *   4. Apply post-match updates (MMR, tilt, soft reset)
+ *   5. Record each match in the MatchHistory (if provided)
  *
  * Progress is printed every 10 games and at the placement boundary.
  */
 static void run_simulation(Player *players, int n_players,
-                            Match *matches, int n_games) {
+                            Match *matches, int n_games,
+                            MatchHistory *history) {
+    int global_match_id = 0;
+
     for (int g = 0; g < n_games; g++) {
         int num_matches;
         create_matches(players, n_players, matches, &num_matches, g);
+
+        int ts = (int)time(NULL);
 
         for (int m = 0; m < num_matches; m++) {
             determine_troll_picks(&matches[m]);
             simulate_match(&matches[m]);
             update_players_after_match(&matches[m]);
+
+            /* Record the match in history (if history is available) */
+            if (history != NULL) {
+                history_add_match(history, &matches[m],
+                                  ++global_match_id, ts);
+            }
         }
 
         /* Progress feedback */
@@ -151,6 +163,17 @@ int main(void) {
         return 1;
     }
 
+    /* Estimate total matches across all games to pre-allocate history.
+     * Each game round produces at most max_matches matches. */
+    int estimated_total = max_matches * n_games;
+    MatchHistory *history = history_create(estimated_total > 0
+                                           ? estimated_total : 64);
+    if (!history) {
+        fprintf(stderr, "Warning: could not allocate match history; "
+                "simulation will run without recording.\n");
+        /* Non-fatal: continue without history */
+    }
+
     /* ---- Initialise ---- */
     srand((unsigned int)time(NULL));
     init_players(players, n_players);
@@ -159,10 +182,16 @@ int main(void) {
     printf("─────────────────────────────────────────────────────────\n\n");
 
     /* ---- Run ---- */
-    run_simulation(players, n_players, matches, n_games);
+    run_simulation(players, n_players, matches, n_games, history);
 
     /* ---- Final report ---- */
     print_final_report(players, n_players, n_games);
+
+    /* ---- Export match history ---- */
+    if (history != NULL) {
+        history_export_json(history, players, n_players, "match_history.json");
+        history_free(history);
+    }
 
     /* ---- Clean up ---- */
     free(matches);

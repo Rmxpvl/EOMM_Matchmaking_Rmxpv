@@ -218,6 +218,35 @@ typedef struct {
     int   tilt2_count;        /* players at tilt_level == 2                    */
 } SkillStats;
 
+/*
+ * StoredMatch — immutable snapshot of one completed 5v5 match.
+ *
+ * Stores the 10 player IDs (not pointers) so the record remains valid
+ * even after the player array is reallocated or freed.
+ */
+typedef struct {
+    int match_id;
+    int timestamp;             /* seconds since epoch at match creation  */
+    int team_a_ids[TEAM_SIZE];
+    int team_b_ids[TEAM_SIZE];
+    int winner;                /* 0 = team_a won, 1 = team_b won         */
+    float team_a_power;        /* combined effective-MMR × win-rate      */
+    float team_b_power;
+    int troll_count_a;         /* troll picks on team_a this match       */
+    int troll_count_b;
+} StoredMatch;
+
+/*
+ * MatchHistory — dynamic array of StoredMatch records.
+ *
+ * Grows automatically via realloc when capacity is reached.
+ */
+typedef struct {
+    StoredMatch *matches;
+    int count;
+    int capacity;
+} MatchHistory;
+
 /* =========================================================
  * Function declarations
  * ========================================================= */
@@ -296,5 +325,26 @@ void print_stats(const SkillStats stats[3]);
 
 /* Print the final comprehensive simulation report. */
 void print_final_report(const Player *players, int n, int total_games);
+
+/* --- Match history --- */
+
+/* Allocate a new MatchHistory with the given initial capacity.
+ * Returns NULL on allocation failure. */
+MatchHistory *history_create(int initial_capacity);
+
+/* Record a completed match into the history.
+ * match_id and timestamp are provided by the caller.
+ * team power and troll counts are derived from the Match snapshot. */
+void history_add_match(MatchHistory *h, const Match *m,
+                       int match_id, int timestamp);
+
+/* Export the entire history as a JSON file at filename.
+ * players / n_players are used to enrich each record with player names.
+ * Writes nothing if h is NULL. */
+void history_export_json(const MatchHistory *h, const Player *players,
+                         int n_players, const char *filename);
+
+/* Free all memory owned by the history (also sets count/capacity to 0). */
+void history_free(MatchHistory *h);
 
 #endif /* EOMM_SYSTEM_H */
